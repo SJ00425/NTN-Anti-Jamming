@@ -30,4 +30,6 @@ This module can be directly imported and used within the Sionna environment.
 
 Tracks Starlink satellites from a fixed location near Boulder at a specific timestamp.  
 **Note**: Real-time tracking is not displayed within the notebook.
+**Note**: Excessive pull requests from Celestrak within a short time may result in temporary IP blocking.
+
 
