@@ -1,5 +1,15 @@
 # NTN-Anti-Jamming
 
+## `test_copy.ipynb`
+
+
+- Manually set satellite count and positions, or fetch real Starlink TLE data.
+- Supports multiple beamforming strategies:
+  - `'eig1'`: Eigen-decomposition on unweighted channel covariance.
+  - `'eig2'`: Weighted eigen-decomposition (equalizes TX energy per user).
+  - `'avg'`: Average of normalized effective channels.
+  - `'fair'`: Max-min fairness (solves convex optimization to equalize RX energy).
+  - `zero-sum`: Simulated game-theoretic optimization between transmitter and jammer.
 
 ## `channel-det-test.ipynb`
 
