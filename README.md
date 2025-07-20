@@ -34,6 +34,19 @@ Tracks Starlink satellites from a fixed location near Boulder at a specific time
 
 **Note**: Excessive pull requests from Celestrak within a short time may result in temporary IP blocking.
 
+## `geo_utils.py`
 
+Utilities for satellite-ground geometry using North-0° / clockwise azimuth convention.
+
+- `arc_point_on_earth(d_km, az_deg)`:  
+  Returns the ENU position of a point `d_km` away along azimuth `az_deg` on Earth's surface.
+
+- `compute_satellite_intersection_point_enu(az_deg, el_deg, sat_orbit_m, tx_pos=None)`:  
+  Computes where a ray (from azimuth/elevation) intersects a satellite shell. Returns ENU vector, delay, and distance.
+
+- `compute_az_el_dist(sat_pos, gnd_pos, frequency_hz=None)`:  
+  Returns azimuth, elevation, and distance between two points; optionally returns number of wavelengths.
+
+Internally handles azimuth conversion between North-0° (CW) and East-0° (CCW).
 
 
