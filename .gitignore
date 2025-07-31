@@ -9,5 +9,6 @@ __pycache__/
 .venv/
 env/
 venv/
-
+*.csv/
+*.gif/
 test_total.ipynb
