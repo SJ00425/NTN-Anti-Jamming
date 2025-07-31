@@ -38,11 +38,17 @@ This module can be directly imported and used within the Sionna environment.
 
 ## `starlink_tracker.ipynb`
 
-Tracks Starlink satellites from a fixed location near Boulder at a specific timestamp.  
+Tracks Starlink satellites from a fixed location near Boulder, Colorado.
 
-**Note**: Real-time tracking is not displayed within the notebook.
+Starting from the current time, the notebook samples satellite positions every **n seconds** for a total duration of **m minutes**, filters based on elevation and azimuth constraints, and:
 
-**Note**: Excessive pull requests from Celestrak within a short time may result in temporary IP blocking.
+- Saves the data to a `.csv` file  
+- Generates a `.gif` animation of satellite positions in the sky  
+  - The 5 closest satellites at each time step are highlighted using **unique persistent colors**  
+  - All other satellites are shown in gray  
+
+**Note**: Avoid querying Celestrak too frequently — excessive requests may result in temporary IP blocking.
+
 
 ## `geo_utils.py`
 
