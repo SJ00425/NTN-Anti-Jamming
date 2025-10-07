@@ -43,7 +43,9 @@ __all__ = [
     # Extra gradient
     "solve_game_extragradient", 
     # Primal dual hyprid gradient
-    "solve_game_pdhg"
+    "solve_game_pdhg",
+    
+    "solve_game_proxBR_pp"
 ]
 
 
@@ -195,37 +197,55 @@ def project_psd_trace(
 
 def kkt_residual_proj(H0, H1, Q0, Q1, N0, P0, P1,
                       eta_probe: float = 0.2,
-                      mode: str = 'eq'):
+                      mode: str = 'eq',
+                      rho: float | None = None,
+                      norm: str = 'fro'):
     """
-    Gradient-mapping residual based on projected steps (KKT surrogate).
+    Gradient-mapping / Prox-gradient residual for saddle problems.
 
-    For a saddle-point with constraints Q0 ∈ C0, Q1 ∈ C1, define one-step maps
-        T0(Q0) = Π_{C0}(Q0 + η G0),   T1(Q1) = Π_{C1}(Q1 − η G1)
-    with gradients (G0, G1) at (Q0, Q1) and Π a projection (either trace-≤ or =),
-    using a small probe step η. The fixed point condition T(Q) = Q is a proxy for
-    KKT stationarity. We report
-        res = max( ||(T0(Q0)−Q0)||_F,  ||(T1(Q1)−Q1)||_F ) / η
-    so that res → 0 near stationary points.
+    modes:
+      - 'le'   : projected one-step residual with trace-≤ projection
+      - 'eq'   : projected one-step residual with trace-= projection
+      - 'both' : returns (res_eq, res_le)
+      - 'prox' : PROX-GRADIENT residual (primary merit for true convergence)
+                 uses step size 'rho' (>0). If rho is None, fall back to eta_probe.
     """
     G0, G1 = gradients(H0, H1, Q0, Q1, N0)
 
+    # -------- prox-gradient residual (true merit) --------
+    if mode == 'prox':
+        if rho is None:
+            rho = float(eta_probe)  # 合理缺省
+        assert rho > 0.0, "rho must be > 0 for mode='prox'"
+
+        # Q0 是“max”块：朝 +G0 方向做近端一步
+        Z0 = project_psd_trace(Q0 + rho * G0, P0, mode='le')
+        # Q1 是“min”块：朝 -G1 方向做近端一步
+        Z1 = project_psd_trace(Q1 - rho * G1, P1, mode='le')
+
+        R0 = (Q0 - Z0) / rho
+        R1 = (Q1 - Z1) / rho
+        return float(np.sqrt(np.linalg.norm(R0, norm)**2 + np.linalg.norm(R1, norm)**2))
+
+    # -------- 原有的一步投影残差（KKT surrogate）--------
     # ≤ residual
     Q0p_le = project_psd_trace(Q0 + eta_probe*G0, P0, mode='le')
     Q1p_le = project_psd_trace(Q1 - eta_probe*G1, P1, mode='le')
     R0_le  = (Q0p_le - Q0) / eta_probe
     R1_le  = (Q1p_le - Q1) / eta_probe
-    res_le = max(np.linalg.norm(R0_le, 'fro'), np.linalg.norm(R1_le, 'fro'))
+    res_le = max(np.linalg.norm(R0_le, norm), np.linalg.norm(R1_le, norm))
 
     # = residual
     Q0p_eq = project_psd_trace(Q0 + eta_probe*G0, P0, mode='eq')
     Q1p_eq = project_psd_trace(Q1 - eta_probe*G1, P1, mode='eq')
     R0_eq  = (Q0p_eq - Q0) / eta_probe
     R1_eq  = (Q1p_eq - Q1) / eta_probe
-    res_eq = max(np.linalg.norm(R0_eq, 'fro'), np.linalg.norm(R1_eq, 'fro'))
+    res_eq = max(np.linalg.norm(R0_eq, norm), np.linalg.norm(R1_eq, norm))
 
     if mode == 'both':
         return res_eq, res_le
     return res_eq if mode == 'eq' else res_le
+
 
 
 
@@ -640,7 +660,7 @@ def solve_game_bestresp_Q0_then_Q1(
 
 def _proxBR_Q0(H0, H1, Q0k, Q1k, N0, P0, rho,
                inner_max=200, inner_tol=1e-6,
-               eta0=0.25, beta=0.5, gamma=1.1, eta_min=1e-3, eta_max=1.0):
+               eta0=0.25, beta=0.5, gamma=1.1, eta_min=1e-3, eta_max=1.0, proj_mode='le'):
     """
     Ascent-side prox-BR on
         f(Q0) = J(Q0, Q1k) − (ρ/2) ||Q0 − Q0k||_F^2
@@ -655,7 +675,7 @@ def _proxBR_Q0(H0, H1, Q0k, Q1k, N0, P0, rho,
         # backtracking
         tried = False
         for __ in range(20):
-            Q0_new = project_psd_trace(Q0 + eta*grad, P0, mode='le')
+            Q0_new = project_psd_trace(Q0 + eta*grad, P0, mode=proj_mode)
             f_new = compute_J(H0, H1, Q0_new, Q1k, N0) - 0.5*rho*np.linalg.norm(Q0_new-Q0k,'fro')**2
             if f_new + 1e-12 >= f_old:             # accept and mild enlarge
                 tried = True
@@ -675,7 +695,7 @@ def _proxBR_Q0(H0, H1, Q0k, Q1k, N0, P0, rho,
 
 def _proxBR_Q1(H0, H1, Q0k1, Q1k, N0, P1, rho,
                inner_max=200, inner_tol=1e-6,
-               eta0=0.25, beta=0.5, gamma=1.1, eta_min=1e-3, eta_max=1.0):
+               eta0=0.25, beta=0.5, gamma=1.1, eta_min=1e-3, eta_max=1.0, proj_mode='le'):
     """
     Descent-side prox-BR on
         g(Q1) = J(Q0k+1, Q1) + (ρ/2) ||Q1 − Q1k||_F^2
@@ -690,7 +710,7 @@ def _proxBR_Q1(H0, H1, Q0k1, Q1k, N0, P1, rho,
         # backtracking
         tried = False
         for __ in range(20):
-            Q1_new = project_psd_trace(Q1 - eta*grad, P1, mode='le')
+            Q1_new = project_psd_trace(Q1 - eta*grad, P1, mode=proj_mode)
             g_new = compute_J(H0, H1, Q0k1, Q1_new, N0) + 0.5*rho*np.linalg.norm(Q1_new-Q1k,'fro')**2
             if g_new <= g_old + 1e-12:             # accept and mild enlarge
                 tried = True
@@ -768,6 +788,188 @@ def solve_game_proxBR(
 
         # stopping
         if (k >= min_outer) and (max(errQ0, errQ1) < outer_tol) and (res < max(1e-3*outer_tol, outer_tol)):
+            break
+
+    return (Q0, Q1, hist) if track_hist else (Q0, Q1)
+
+# ============================================================
+# Proximal Best-Response solver2 (trace ≤, prox regularization)
+# ============================================================
+
+# ---------- 1) 块 prox-gradient 范数（用于相对误差规则） ----------
+def _block_pg_norm_Q0(H0, H1, Q0, Q1, N0, P0, eta=0.1, proj_mode='le'):
+    G0, _ = gradients(H0, H1, Q0, Q1, N0)
+    Z0    = project_psd_trace(Q0 + eta*G0, P0, mode=proj_mode)  # max块：上升
+    return np.linalg.norm((Q0 - Z0)/eta, 'fro')
+
+def _block_pg_norm_Q1(H0, H1, Q0, Q1, N0, P1, eta=0.1, proj_mode='le'):
+    _, G1 = gradients(H0, H1, Q0, Q1, N0)
+    Z1    = project_psd_trace(Q1 - eta*G1, P1, mode=proj_mode)  # min块：下降
+    return np.linalg.norm((Q1 - Z1)/eta, 'fro')
+
+# ---------- 2) 相对误差包装器：按需要“加严”内层 ----------
+def _solve_Q0_to_relative_error(Q0k, Q1k, target_pg, H0,H1,N0,P0,rho,
+                                inner_max, inner_tol,
+                                eta0,beta,gamma,eta_min,eta_max,
+                                pg_eta=0.1, proj_mode='le', max_refines=3):
+    Q0_new = _proxBR_Q0(H0,H1,Q0k,Q1k,N0,P0,rho,
+                        inner_max=inner_max, inner_tol=inner_tol,
+                        eta0=eta0,beta=beta,gamma=gamma,
+                        eta_min=eta_min,eta_max=eta_max, proj_mode=proj_mode)
+    ref = 0
+    while ref < max_refines:
+        pg = _block_pg_norm_Q0(H0,H1,Q0_new,Q1k,N0,P0,eta=pg_eta,proj_mode=proj_mode)
+        if pg <= target_pg:
+            break
+        # 加严
+        inner_tol = max(inner_tol*0.2, 1e-12)
+        inner_max = int(inner_max*1.5)+5
+        Q0_new = _proxBR_Q0(H0,H1,Q0k,Q1k,N0,P0,rho,
+                            inner_max=inner_max, inner_tol=inner_tol,
+                            eta0=eta0,beta=beta,gamma=gamma,
+                            eta_min=eta_min,eta_max=eta_max)
+        ref += 1
+    return hermitian(Q0_new)
+
+def _solve_Q1_to_relative_error(Q0k1, Q1k, target_pg, H0,H1,N0,P1,rho,
+                                inner_max, inner_tol,
+                                eta0,beta,gamma,eta_min,eta_max,
+                                pg_eta=0.1, proj_mode='le', max_refines=3):
+    Q1_new = _proxBR_Q1(H0,H1,Q0k1,Q1k,N0,P1,rho,
+                        inner_max=inner_max, inner_tol=inner_tol,
+                        eta0=eta0,beta=beta,gamma=gamma,
+                        eta_min=eta_min,eta_max=eta_max, proj_mode=proj_mode)
+    ref = 0
+    while ref < max_refines:
+        pg = _block_pg_norm_Q1(H0,H1,Q0k1,Q1_new,N0,P1,eta=pg_eta,proj_mode=proj_mode)
+        if pg <= target_pg:
+            break
+        # 加严
+        inner_tol = max(inner_tol*0.2, 1e-12)
+        inner_max = int(inner_max*1.5)+5
+        Q1_new = _proxBR_Q1(H0,H1,Q0k1,Q1k,N0,P1,rho,
+                            inner_max=inner_max, inner_tol=inner_tol,
+                            eta0=eta0,beta=beta,gamma=gamma,
+                            eta_min=eta_min,eta_max=eta_max)
+        ref += 1
+    return hermitian(Q1_new)
+
+# ---------- 3) 全新：带 ρ-回溯 + 相对误差 的 ProxBR 外层 ----------
+def solve_game_proxBR_pp(
+    H0, H1, N0, P0, P1,
+    rho=5e-2, outer_steps=300, outer_tol=1e-6,
+    inner_max=200, inner_tol=1e-6,
+    eta0_inner=0.25, beta=0.5, gamma=1.05, eta_min=1e-3, eta_max=0.3,
+    Q0_init=None, Q1_init=None,
+    min_outer=5,
+    sigma=0.3, tau=1e-2, grow=2.0, lam=1.0,
+    pg_eta=0.1, proj_mode='le',
+    rho_max=1e3, freeze_backtrack_at=1e-4,  # 新增：ρ上限及末期冻结阈值
+    verbose=True, track_hist=True
+):
+    """ProxBR + 相对误差 + ρ回溯（含上限/冻结）"""
+    N = H0.shape[1]
+    Q0 = np.zeros((N, N), dtype=complex) if Q0_init is None else Q0_init.copy()
+    Q1 = np.zeros((N, N), dtype=complex) if Q1_init is None else Q1_init.copy()
+    hist = None
+    if track_hist:
+        hist = {'J': [], 'res_prox': [], 'res_eq': [], 'res_le': [],
+                'errQ0': [], 'errQ1': [], 'trQ0': [], 'trQ1': [], 'rho': []}
+
+    # 自适应 τ
+    def adaptive_tau(g_old, base_tau=tau, g_thresh=1e-2):
+        if g_old >= g_thresh:
+            return base_tau
+        return base_tau * (g_old / g_thresh)
+
+    for k in range(1, outer_steps + 1):
+        Q0, Q1 = hermitian(Q0), hermitian(Q1)
+        Q0_old, Q1_old = Q0.copy(), Q1.copy()
+
+        # 粗略候选
+        Q0_tent = _solve_Q0_to_relative_error(Q0, Q1, np.inf,
+                                              H0, H1, N0, P0, rho,
+                                              inner_max, inner_tol,
+                                              eta0_inner, beta, gamma, eta_min, eta_max,
+                                              pg_eta, proj_mode)
+        Q1_tent = _solve_Q1_to_relative_error(Q0_tent, Q1, np.inf,
+                                              H0, H1, N0, P1, rho,
+                                              inner_max, inner_tol,
+                                              eta0_inner, beta, gamma, eta_min, eta_max,
+                                              pg_eta, proj_mode)
+
+        dz = np.sqrt(np.linalg.norm(Q0_tent - Q0, 'fro')**2 +
+                     np.linalg.norm(Q1_tent - Q1, 'fro')**2)
+        target_pg = sigma * dz / max(rho, 1e-12)
+
+        # 精化候选
+        Q0_new = _solve_Q0_to_relative_error(Q0, Q1, target_pg,
+                                             H0, H1, N0, P0, rho,
+                                             inner_max, inner_tol,
+                                             eta0_inner, beta, gamma, eta_min, eta_max,
+                                             pg_eta, proj_mode)
+        Q1_new = _solve_Q1_to_relative_error(Q0_new, Q1, target_pg,
+                                             H0, H1, N0, P1, rho,
+                                             inner_max, inner_tol,
+                                             eta0_inner, beta, gamma, eta_min, eta_max,
+                                             pg_eta, proj_mode)
+
+        Q0_c = hermitian((1 - lam) * Q0 + lam * Q0_new)
+        Q1_c = hermitian((1 - lam) * Q1 + lam * Q1_new)
+
+        g_old = kkt_residual_proj(H0, H1, Q0, Q1, N0, P0, P1,
+                                  mode='prox', rho=rho, eta_probe=rho)
+        g_new = kkt_residual_proj(H0, H1, Q0_c, Q1_c, N0, P0, P1,
+                                  mode='prox', rho=rho, eta_probe=rho)
+
+        # ρ回溯（加上上限与冻结）
+        tries = 0
+        while g_new > max((1 - tau) * g_old, 1e-14) and tries < 4:
+            if g_old < freeze_backtrack_at or rho >= rho_max:
+                break
+            rho = min(rho * grow, rho_max)
+            tau_eff = adaptive_tau(g_old, base_tau=tau)
+            Q0_c = _solve_Q0_to_relative_error(Q0, Q1, target_pg,
+                                               H0, H1, N0, P0, rho,
+                                               inner_max, inner_tol,
+                                               eta0_inner, beta, gamma, eta_min, eta_max,
+                                               pg_eta, proj_mode)
+            Q1_c = _solve_Q1_to_relative_error(Q0_c, Q1, target_pg,
+                                               H0, H1, N0, P1, rho,
+                                               inner_max, inner_tol,
+                                               eta0_inner, beta, gamma, eta_min, eta_max,
+                                               pg_eta, proj_mode)
+            g_new = kkt_residual_proj(H0, H1, Q0_c, Q1_c, N0, P0, P1,
+                                      mode='prox', rho=rho, eta_probe=rho)
+            tries += 1
+
+        Q0, Q1 = hermitian(Q0_c), hermitian(Q1_c)
+
+        # 记录
+        errQ0 = np.linalg.norm(Q0 - Q0_old, 'fro') / max(np.linalg.norm(Q0_old, 'fro'), 1.0)
+        errQ1 = np.linalg.norm(Q1 - Q1_old, 'fro') / max(np.linalg.norm(Q1_old, 'fro'), 1.0)
+        Jval = compute_J(H0, H1, Q0, Q1, N0)
+        res_prox = g_new
+        if track_hist:
+            hist['J'].append(float(Jval))
+            hist['res_prox'].append(float(res_prox))
+            res_eq = kkt_residual_proj(H0, H1, Q0, Q1, N0, P0, P1,
+                                       mode='eq', eta_probe=pg_eta)
+            res_le = kkt_residual_proj(H0, H1, Q0, Q1, N0, P0, P1,
+                                       mode='le', eta_probe=pg_eta)
+            hist['res_eq'].append(float(res_eq))
+            hist['res_le'].append(float(res_le))
+            hist['errQ0'].append(float(errQ0))
+            hist['errQ1'].append(float(errQ1))
+            hist['trQ0'].append(float(np.trace(Q0).real))
+            hist['trQ1'].append(float(np.trace(Q1).real))
+            hist['rho'].append(float(rho))
+
+        if verbose and (k % 10 == 0 or k <= 5 or k == outer_steps):
+            print(f"[{k:03d}] J={Jval:.4f}, ||G||_prox={res_prox:.2e}, "
+                  f"errQ0={errQ0:.2e}, errQ1={errQ1:.2e}, rho={rho:.3g}")
+
+        if k >= min_outer and res_prox < outer_tol:
             break
 
     return (Q0, Q1, hist) if track_hist else (Q0, Q1)
