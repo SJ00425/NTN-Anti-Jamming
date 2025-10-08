@@ -12,3 +12,4 @@ venv/
 *.csv
 *.gif
 test_total.ipynb
+test*.ipynb
