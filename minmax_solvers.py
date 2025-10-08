@@ -332,7 +332,10 @@ def solve_game_mirror_prox(
     Q0_init=None, Q1_init=None,
     use_averaging=True,         # tail averaging
     eta_probe=0.1,              # residual thermometer
-    verbose=False, track_hist=True
+    verbose=False, track_hist=True,
+    progress=None,            # callable: progress(i, total, metrics:dict, ctx:dict) -> bool(stop?)
+    progress_every=1,         # 每多少步调用一次
+    progress_ctx=None         # 传上下文信息：方法名/时刻/k/卫星名等
 ):
     """
     Fixed-step Mirror-Prox (Nemirovski, 2004) under entropy geometry (trace equality).
@@ -383,7 +386,7 @@ def solve_game_mirror_prox(
         errQ0 = np.linalg.norm(Q0_new - Q0_old, 'fro') / max(np.linalg.norm(Q0_old,'fro'), 1.0)
         errQ1 = np.linalg.norm(Q1_new - Q1_old, 'fro') / max(np.linalg.norm(Q1_old,'fro'), 1.0)
         Jval  = compute_J(H0, H1, Q0_new, Q1_new, N0)
-        res   = stationarity_residual_mirror(H0, H1, Q0_new, Q1_new, N0, P0, P1, eta_probe=eta)
+        res   = stationarity_residual_mirror(H0, H1, Q0_new, Q1_new, N0, P0, P1, eta_probe=eta_probe)
 
         if track_hist:
             hist['J'].append(Jval)
@@ -399,6 +402,20 @@ def solve_game_mirror_prox(
             Q0_acc += Q0_new; Q1_acc += Q1_new; acc_cnt += 1
 
         Q0, Q1 = Q0_new, Q1_new
+        
+        if progress and (k == 1 or (k % progress_every == 0) or k == steps):
+            stop = progress(
+                i=k, total=steps,
+                metrics={
+                    "J": float(np.real(Jval)),
+                    "residual": float(res),
+                    "errQ0": float(errQ0),
+                    "errQ1": float(errQ1),
+                    "eta":float(eta), 
+                },
+                ctx=progress_ctx or {}
+            )
+            if stop: break
 
         if (k >= min_steps) and (max(errQ0, errQ1) < tol) and (res < max(1e-3*tol, tol)):
             break
@@ -513,8 +530,11 @@ def solve_game_bestresp_Q0_then_Q1(
     eta_probe=0.1,                       # for residual "thermometer" only
     multi_stream=True, verbose=True, track_hist=True,
     Q1_init=None,                        # jammer init
-    Q0_init=None                         # desired init (optional)
-):
+    Q0_init=None,                         # desired init (optional)
+    progress=None,            # callable: progress(i, total, metrics:dict, ctx:dict) -> bool(stop?)
+    progress_every=1,         # 每多少步调用一次
+    progress_ctx=None         # 传上下文信息：方法名/时刻/k/卫星名等
+    ):
     """
     Alternating scheme:
       (i)  Q0 ← argmax_{tr≤P0, Q0⪰0} J(Q0, Q1) via water-filling (closed form)
@@ -640,7 +660,21 @@ def solve_game_bestresp_Q0_then_Q1(
         if verbose and (it <= 20 or it % 50 == 0 or it == max_outer):
             e0 = f"{errQ0:.3e}" if np.isfinite(errQ0) else "nan"
             print(f"[outer {it}] errQ0={e0}, errQ1={errQ1:.3e}, res={res:.3e}, J={Jval:.4f}, eta={eta_var:.3g}, trQ1={hist['trQ1'][-1]:.6f}")
-
+        # --- progress callback（与 MP 版一致） ---
+        if progress and (it == 1 or (it % progress_every == 0) or it == max_outer):
+            stop = progress(
+                i=it, total=max_outer,
+                metrics={
+                    "J": float(np.real(Jval)),
+                    "residual": float(res),
+                    "errQ0": (float(errQ0) if np.isfinite(errQ0) else float('nan')),
+                    "errQ1": float(errQ1),
+                    "eta": float(eta_var),
+                },
+                ctx=progress_ctx or {}
+            )
+            if stop:
+                break
         # stop: use errQ1 + residual; guard with min_outer
         if (it >= min_outer) and (errQ1 < tol) and (res < max(1e-3*tol, tol)):
             break
