@@ -504,6 +504,33 @@ def mp_entropy_step(Q: np.ndarray, grad: np.ndarray,
     if tr > tau: Y = (tau/tr)*Y     # implement ≤ tau
     return hermitian(Y)
 
+    # """
+    # 稳定版熵几何一步：在特征域做 softmax，避免 exp 溢出，且强制 tr=τ。
+    # """
+    # Qh  = hermitian(Q)
+    # Gh  = hermitian(grad)
+
+    # # “对偶前进”后直接特征分解
+    # lam, U = np.linalg.eigh(Qh - eta*Gh)
+
+    # # 中心化 + 截断，彻底防溢出/下溢
+    # lam = lam - np.max(lam)
+    # lam = np.clip(lam, -60.0, 60.0)
+
+    # w  = np.exp(lam)
+    # sw = np.sum(w)
+    # if (not np.isfinite(sw)) or sw <= 0:
+    #     n = lam.size
+    #     return tau * np.eye(n, dtype=complex) / max(n,1)
+
+    # s = (tau / sw) * w
+    # Q_next = U @ np.diag(s) @ U.conj().T
+
+    # # 极小抖动，保证后续 Cholesky 稳定
+    # eps = 1e-12 * float(tau) / max(Q.shape[0], 1)
+    # return hermitian(Q_next) + eps * np.eye(Q.shape[0], dtype=complex)
+
+
 
 def stationarity_residual_BRG(H0, H1, Q0, Q1, N0, P0, P1,
                           eta_probe: float = 0.1,
