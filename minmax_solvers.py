@@ -104,6 +104,7 @@ def compute_J(H0: np.ndarray, H1: np.ndarray,
     P = N0 * np.eye(M, dtype=complex) + H1 @ Q1 @ H1.conj().T
     S = H0 @ Q0 @ H0.conj().T
     A = P + S
+    B  = 100e6
 
     def _logdet(mat: np.ndarray) -> float:
         try:
@@ -113,7 +114,7 @@ def compute_J(H0: np.ndarray, H1: np.ndarray,
             L = cholesky(mat + eps * np.eye(M, dtype=complex))
         return 2.0 * np.sum(np.log(np.abs(np.diag(L))))
 
-    return (_logdet(A) - _logdet(P)) / np.log(2.0)
+    return ((_logdet(A) - _logdet(P)) / np.log(2.0))
 
 
 def project_psd_trace(
