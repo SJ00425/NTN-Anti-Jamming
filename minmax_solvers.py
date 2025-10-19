@@ -46,6 +46,8 @@ __all__ = [
     "solve_game_pdhg",
     
     "solve_game_proxBR_pp"
+    
+    "compute_J"
 ]
 
 
