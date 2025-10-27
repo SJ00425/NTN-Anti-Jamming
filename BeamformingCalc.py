@@ -21,21 +21,6 @@ def svd_bf(H: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     u1 = u1 / (np.linalg.norm(u1) + 1e-15)
     return v1, u1  # (w_t, w_r)
 
-def left_singular_u1(H: np.ndarray) -> np.ndarray:
-    """
-    Fast left singular vector u1 for y = H x + n, H shape (Nr, Nt).
-    Returns:
-        w_r (Nr,1): principal left singular vector (unit norm).
-    """
-    # G is small when Nr << Nt
-    G = H @ H.conj().T                         # (Nr, Nr), Hermitian PSD
-    # eigh is for Hermitian; eigenvalues are ascending
-    vals, vecs = np.linalg.eigh(G)
-    u1 = vecs[:, -1].reshape(-1, 1)            # principal eigenvector
-    u1 /= (np.linalg.norm(u1) + 1e-15)
-    return u1
-def hermitize(M):
-    return 0.5 * (M + M.conj().T)
 
 
 def nulling_bf(h: np.ndarray, 
@@ -91,6 +76,27 @@ def nulling_bf(h: np.ndarray,
     v_null = v_nulls[:, 0].reshape(-1, 1)
     
     return v_null, A, B, max_eigen_value
+
+
+
+def left_singular_u1(H: np.ndarray) -> np.ndarray:
+    """
+    Fast left singular vector u1 for y = H x + n, H shape (Nr, Nt).
+    Returns:
+        w_r (Nr,1): principal left singular vector (unit norm).
+    """
+    # G is small when Nr << Nt
+    G = H @ H.conj().T                         # (Nr, Nr), Hermitian PSD
+    # eigh is for Hermitian; eigenvalues are ascending
+    vals, vecs = np.linalg.eigh(G)
+    u1 = vecs[:, -1].reshape(-1, 1)            # principal eigenvector
+    u1 /= (np.linalg.norm(u1) + 1e-15)
+    return u1
+def hermitize(M):
+    return 0.5 * (M + M.conj().T)
+
+
+
 
 
 
