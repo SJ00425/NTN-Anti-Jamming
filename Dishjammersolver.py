@@ -110,7 +110,7 @@ def optimal_Q0(H0, H1, N0, P0, P1):
     I_plus = np.eye(M, dtype=complex) + Y
     sign, logdet = np.linalg.slogdet(I_plus)
     rate_bpcu = (logdet / np.log(2.0)) if sign > 0 else np.nan
-
+    C = rate_bpcu
     info = {
         "lambdas": lambdas,
         "V": V,
@@ -119,4 +119,4 @@ def optimal_Q0(H0, H1, N0, P0, P1):
         "rank": int(np.count_nonzero(p > 1e-10)),
         "rate_bpcu": float(rate_bpcu),
     }
-    return Q0, Q1 ,info
+    return Q0, Q1 ,info, C

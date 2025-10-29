@@ -106,7 +106,6 @@ def compute_J(H0: np.ndarray, H1: np.ndarray,
     P = N0 * np.eye(M, dtype=complex) + H1 @ Q1 @ H1.conj().T
     S = H0 @ Q0 @ H0.conj().T
     A = P + S
-    B  = 100e6
 
     def _logdet(mat: np.ndarray) -> float:
         try:
