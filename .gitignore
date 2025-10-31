@@ -13,3 +13,4 @@ venv/
 *.gif
 test_total.ipynb
 test*.ipynb
+result_plot
