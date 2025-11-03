@@ -113,7 +113,8 @@ def compute_az_el_dist(sat_pos, gnd_pos, frequency_hz: float | None = None):
 
     el_rad = np.arcsin(dz)
     az_east = np.arctan2(dy, dx)                       # 0° = East, CCW
-    az_deg  = _east_to_north(np.degrees(az_east))      # convert back to North-0°
+    az_deg  =np.degrees(az_east)%360
+    # az_deg  = _east_to_north(np.degrees(az_east))      # convert back to North-0°
 
     el_deg = np.degrees(el_rad)
 
